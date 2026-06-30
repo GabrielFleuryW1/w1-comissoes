@@ -110,13 +110,15 @@ def build_unified(csv_bytes, params):
     """
     NM = params['nome']
 
-    # Detect encoding
-    for enc in ['latin-1', 'utf-8', 'cp1252']:
+    # Detect encoding (W1 exports are cp1252/latin-1)
+    for enc in ['utf-8-sig', 'cp1252', 'latin-1']:
         try:
             df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding=enc)
             break
-        except:
+        except UnicodeDecodeError:
             continue
+    else:
+        df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding='latin-1', encoding_errors='replace')
 
     # ── Extract value & FA position for this person ──
     def gvp(row):
@@ -919,8 +921,8 @@ def build_unified(csv_bytes, params):
         'bonus_falta_valor': v_falta,
         'parcelas_faltantes': len(missing_base),
         'comparisons': comparisons,
-        'meses': f"{APL_LBL[0]} – {ALL_LBL[-1]}",
-        'hist_range': f"{APL_LBL[0]} – {ALL_LBL[N_HIST-1]}",
+        'meses': f"{ALL_LBL[0]} – {ALL_LBL[-1]}",
+        'hist_range': f"{ALL_LBL[0]} – {ALL_LBL[N_HIST-1]}",
     }
 
     return buf.getvalue(), summary
@@ -1022,15 +1024,17 @@ with st.sidebar:
 uploaded = st.file_uploader("📁 Upload do extrato CSV (semicolon-separated, latin-1)", type=['csv'])
 
 if uploaded:
-    csv_bytes = uploaded.read()
+    csv_bytes = uploaded.getvalue()
 
-    # Try to detect name from CSV
-    for enc in ['latin-1', 'utf-8', 'cp1252']:
+    # Try to detect name from CSV (W1 exports are cp1252/latin-1)
+    for enc in ['utf-8-sig', 'cp1252', 'latin-1']:
         try:
             temp_df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding=enc)
             break
-        except:
+        except UnicodeDecodeError:
             continue
+    else:
+        temp_df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding='latin-1', encoding_errors='replace')
 
     # Find unique names across FA columns
     possible_names = set()
@@ -1231,7 +1235,7 @@ else:
     st.markdown("""
     ```
     ┌─────────┬──────────────────┬─────────────┬──────┬────────┬────────┬────────┐
-    │  Tipo   │  Cliente         │  Produto    t�  FA   │ Set/25 │ Out/25 │ Nov/25 │
+    │  Tipo   │  Cliente         │  Produto    │  FA  │ Set/25 │ Out/25 │ Nov/25 │
     ├─────────┼──────────────────┼─────────────┼──────┼────────┼────────┼────────┤
     │  Base   │  Carolini Neri   │  Klubi Imóv │ FIII │ R$ 117 │ R$ 117 │ R$ 117 │
     │  Bônus  │  Carolini Neri   │  Klubi Imóv │ FIII │        │ R$ 183 │ R$ 150 │
