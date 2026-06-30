@@ -7,13 +7,43 @@ Autor: Gabriel Fleury / Claude
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re, io, warnings
+import re, io, warnings, requests, base64, json
 from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 
 warnings.filterwarnings('ignore')
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# USAGE LOGGING (GitHub CSV)
+# ═══════════════════════════════════════════════════════════════════════════════
+def log_usage(nome, cargo, n_contratos, total_hist, total_proj):
+    """Registra cada uso no arquivo usage_log.csv do repositório GitHub."""
+    try:
+        token = st.secrets.get("GITHUB_TOKEN", "")
+        if not token:
+            return
+        owner, repo, path = "GabrielFleuryW1", "w1-comissoes", "usage_log.csv"
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/contents/{path}"
+        headers = {"Authorization": f"token {token}", "Accept": "application/vnd.github.v3+json"}
+        now = datetime.now().strftime("%Y-%m-%d %H:%M")
+        new_line = f"{now},{nome},{cargo},{n_contratos},{total_hist:.2f},{total_proj:.2f}\n"
+        resp = requests.get(api_url, headers=headers, timeout=5)
+        if resp.status_code == 200:
+            data = resp.json()
+            existing = base64.b64decode(data["content"]).decode("utf-8")
+            sha = data["sha"]
+            content = existing + new_line
+        else:
+            sha = None
+            content = "data_hora,nome,cargo,contratos,total_historico,total_projetado\n" + new_line
+        payload = {"message": f"log: {nome} {now}", "content": base64.b64encode(content.encode()).decode(), "branch": "main"}
+        if sha:
+            payload["sha"] = sha
+        requests.put(api_url, headers=headers, json=payload, timeout=10)
+    except Exception:
+        pass  # silencioso — nunca interrompe o app
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONSTANTS & STYLES
@@ -158,8 +188,11 @@ def build_unified(csv_bytes, params):
         if m: return m.group(1).strip(), m.group(2), m.group(3).strip(), m.group(4).strip()
         return None,None,None,None
 
-    bonus_all[['B_Prod','B_Data','B_Cliente','B_Tipo']]=bonus_all['Observações'].apply(
-        lambda x: pd.Series(parse_obs(x)))
+    if bonus_all.empty:
+        bonus_all = bonus_all.assign(B_Prod=None, B_Data=None, B_Cliente=None, B_Tipo=None)
+    else:
+        bonus_all[['B_Prod','B_Data','B_Cliente','B_Tipo']] = bonus_all['Observações'].apply(
+            lambda x: pd.Series(parse_obs(x)))
     bonus_all['B_Prod_N']=bonus_all['B_Prod'].apply(norm_prod)
     bonus_all['B_Cliente_N']=bonus_all['B_Cliente'].apply(norm_name)
     bonus_all['B_Ref_YM']=bonus_all['B_Data'].apply(
@@ -886,8 +919,8 @@ def build_unified(csv_bytes, params):
         'bonus_falta_valor': v_falta,
         'parcelas_faltantes': len(missing_base),
         'comparisons': comparisons,
-        'meses': f"{ALL_LBL[0]} – {ALL_LBL[-1]}",
-        'hist_range': f"{ALL_LBL[0]} – {ALL_LBL[N_HIST-1]}",
+        'meses': f"{APL_LBL[0]} – {ALL_LBL[-1]}",
+        'hist_range': f"{APL_LBL[0]} – {ALL_LBL[N_HIST-1]}",
     }
 
     return buf.getvalue(), summary
@@ -1111,6 +1144,7 @@ if uploaded:
                     st.error(summary.get('error', 'Erro ao processar o extrato.'))
                 else:
                     st.success("Planilha gerada com sucesso!")
+                    log_usage(summary['nome'], params.get('promos', ['FA I'])[0], summary['contratos'], summary['total_hist'], summary['total_proj'])
 
                     # ── RESULTS DASHBOARD ──
                     st.markdown(f"### Resultados: {summary['nome']}")
@@ -1197,7 +1231,7 @@ else:
     st.markdown("""
     ```
     ┌─────────┬──────────────────┬─────────────┬──────┬────────┬────────┬────────┐
-    │  Tipo   │  Cliente         │  Produto    │  FA  │ Set/25 │ Out/25 │ Nov/25 │
+    │  Tipo   │  Cliente         │  Produto    t�  FA   │ Set/25 │ Out/25 │ Nov/25 │
     ├─────────┼──────────────────┼─────────────┼──────┼────────┼────────┼────────┤
     │  Base   │  Carolini Neri   │  Klubi Imóv │ FIII │ R$ 117 │ R$ 117 │ R$ 117 │
     │  Bônus  │  Carolini Neri   │  Klubi Imóv │ FIII │        │ R$ 183 │ R$ 150 │
