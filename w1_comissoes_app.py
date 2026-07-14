@@ -1148,7 +1148,9 @@ if uploaded:
                     st.error(summary.get('error', 'Erro ao processar o extrato.'))
                 else:
                     st.success("Planilha gerada com sucesso!")
-                    log_usage(summary['nome'], params.get('promos', ['FA I'])[0], summary['contratos'], summary['total_hist'], summary['total_proj'])
+                    _promos = params.get('promos') or {}
+                    _cargo = next((lvl for lvl in ['FA IV','FA III','FA II','FA I'] if _promos.get(lvl)), 'FA IV')
+                    log_usage(summary['nome'], _cargo, summary['contratos'], summary['total_hist'], summary['total_proj'])
 
                     # ── RESULTS DASHBOARD ──
                     st.markdown(f"### Resultados: {summary['nome']}")
