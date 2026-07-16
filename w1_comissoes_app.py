@@ -7,7 +7,7 @@ Autor: Gabriel Fleury / Claude
 import streamlit as st
 import pandas as pd
 import numpy as np
-import re, io, warnings, requests, base64, json
+import re, io, warnings, requests, base64, json, unicodedata
 from datetime import datetime, date
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
@@ -87,9 +87,13 @@ def norm_prod(p):
     if pd.isna(p): return ''
     return str(p).strip().replace('Imóveis','Imóvel').replace('Automóveis','Automóvel')
 
+def _strip_accents(s):
+    """Remove acentos/cedilha para comparação tolerante (Valença == Valenca)."""
+    return unicodedata.normalize('NFD', str(s)).encode('ascii', 'ignore').decode('ascii')
+
 def norm_name(n):
     if pd.isna(n): return ''
-    return str(n).strip().lower()
+    return _strip_accents(str(n)).strip().lower()
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CORE ENGINE: build the unified spreadsheet
@@ -121,12 +125,14 @@ def build_unified(csv_bytes, params):
         df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding='latin-1', encoding_errors='replace')
 
     # ── Extract value & FA position for this person ──
+    _NM_norm = _strip_accents(NM).strip().lower()
     def gvp(row):
         for cn,cv,pos in [('Nome FA I','Valor FA I','FA I'),('Nome FA II','Valor FA II','FA II'),
                            ('Nome FA III','Valor FA III','FA III'),('Nome FA IV','Valor FA IV','FA IV')]:
-            if cn in row.index and row[cn]==NM:
-                try: return float(str(row[cv]).replace(',','.')),pos
-                except: return 0.0,pos
+            if cn in row.index and not pd.isna(row[cn]):
+                if _strip_accents(str(row[cn])).strip().lower() == _NM_norm:
+                    try: return float(str(row[cv]).replace(',','.')),pos
+                    except: return 0.0,pos
         return 0.0,None
 
     res=df.apply(gvp,axis=1,result_type='expand')
