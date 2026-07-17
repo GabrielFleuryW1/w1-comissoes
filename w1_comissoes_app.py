@@ -124,6 +124,9 @@ def build_unified(csv_bytes, params):
     else:
         df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding='latin-1', encoding_errors='replace')
 
+    # Normalize column names: strip accents so lookup works regardless of CSV encoding
+    df.columns = [_strip_accents(str(c)).strip() for c in df.columns]
+
     # ── Extract value & FA position for this person ──
     _NM_norm = _strip_accents(NM).strip().lower()
     def gvp(row):
@@ -137,14 +140,14 @@ def build_unified(csv_bytes, params):
 
     res=df.apply(gvp,axis=1,result_type='expand')
     df['VG']=res[0]; df['FA']=res[1]
-    df['DT']=pd.to_datetime(df['Data da Movimentacão'],errors='coerce')
+    df['DT']=pd.to_datetime(df['Data da Movimentacao'],errors='coerce')
     df['YM']=df['DT'].dt.to_period('M')
     df['DI']=pd.to_datetime(df['Data Inicial'],errors='coerce')
     def pp(p):
         try: return int(str(p))
         except: return 0
     df['PN']=df['Parcela'].apply(pp)
-    ent=df[(df['Tipo da Movimentação']=='Entrada')&(df['VG']>0)].copy()
+    ent=df[(df['Tipo da Movimentacao']=='Entrada')&(df['VG']>0)].copy()
 
     if len(ent)==0:
         return None, {'error': f'Nenhuma entrada encontrada para "{NM}". Verifique se o nome está exatamente igual ao do extrato.'}
@@ -199,7 +202,7 @@ def build_unified(csv_bytes, params):
     if bonus_all.empty:
         bonus_all = bonus_all.assign(B_Prod=None, B_Data=None, B_Cliente=None, B_Tipo=None)
     else:
-        bonus_all[['B_Prod','B_Data','B_Cliente','B_Tipo']] = bonus_all['Observações'].apply(
+        bonus_all[['B_Prod','B_Data','B_Cliente','B_Tipo']] = bonus_all['Observacoes'].apply(
             lambda x: pd.Series(parse_obs(x)))
     bonus_all['B_Prod_N']=bonus_all['B_Prod'].apply(norm_prod)
     bonus_all['B_Cliente_N']=bonus_all['B_Cliente'].apply(norm_name)
@@ -219,10 +222,10 @@ def build_unified(csv_bytes, params):
             bonus_lookup[key].append({'valor':r['VG'],'tipo':tipo,'used':False})
 
     # ── Base products (exclude bonus entries) ──
-    base_all=ent[ent['Classificação']=='Produtos Parceiros'].copy()
+    base_all=ent[ent['Classificacao']=='Produtos Parceiros'].copy()
     base_all=base_all[~base_all['Categoria'].str.contains('Bônus',na=False)]
     excl_pat='Seguro Automóvel|Abertura de Conta|Educação Financeira'
-    base_all=base_all[~base_all['Produto / Serviço'].str.contains(excl_pat,na=False)]
+    base_all=base_all[~base_all['Produto / Servico'].str.contains(excl_pat,na=False)]
 
     # ═══════════════════════════════════════════════════════════════════════════
     # BUILD CONTRACT LIST
@@ -230,8 +233,8 @@ def build_unified(csv_bytes, params):
     contracts=[]
 
     # ── CONSÓRCIO ──
-    cons=base_all[base_all['Produto / Serviço'].str.contains('Consórcio|Klubi',na=False)].copy()
-    for (contato,prod),grp in cons.groupby(['Contato','Produto / Serviço']):
+    cons=base_all[base_all['Produto / Servico'].str.contains('Consórcio|Klubi',na=False)].copy()
+    for (contato,prod),grp in cons.groupby(['Contato','Produto / Servico']):
         fa=grp['FA'].mode().iloc[0] if len(grp)>0 else 'FA III'
         parc_counts=grp.groupby('PN')['VG'].count()
         n_cartas=int(parc_counts.max()) if len(parc_counts)>0 else 1
@@ -250,7 +253,7 @@ def build_unified(csv_bytes, params):
             })
 
     # ── MAG VIDA ──
-    mag=base_all[base_all['Produto / Serviço'].str.contains('MAG|Vida Total',na=False)].copy()
+    mag=base_all[base_all['Produto / Servico'].str.contains('MAG|Vida Total',na=False)].copy()
     for contato,grp in mag.groupby('Contato'):
         fa=grp['FA'].mode().iloc[0] if len(grp)>0 else 'FA III'
         monthly=grp.groupby(grp['YM'].astype(str))['VG'].sum().to_dict()
@@ -268,8 +271,8 @@ def build_unified(csv_bytes, params):
         })
 
     # ── HORIZONTE / PREV ──
-    horiz=base_all[base_all['Produto / Serviço'].str.contains('Horizonte|Zurich Prev|Zurich Port|Prev XP|Zurich Aporte',na=False)].copy()
-    for (contato,prod),grp in horiz.groupby(['Contato','Produto / Serviço']):
+    horiz=base_all[base_all['Produto / Servico'].str.contains('Horizonte|Zurich Prev|Zurich Port|Prev XP|Zurich Aporte',na=False)].copy()
+    for (contato,prod),grp in horiz.groupby(['Contato','Produto / Servico']):
         fa=grp['FA'].mode().iloc[0] if len(grp)>0 else 'FA III'
         monthly=grp.groupby(grp['YM'].astype(str))['VG'].sum().to_dict()
         recent_vals=[v for ym,v in sorted(monthly.items()) if ym>=ALL_YM[max(0,N_HIST-3)]]
@@ -889,10 +892,10 @@ def build_unified(csv_bytes, params):
         dc(ws6,r6,2,ml.get(str(r['YM']),''),bg=bg,al="center")
         dc(ws6,r6,3,str(r['Contato'])[:30],bg=bg)
         dc(ws6,r6,4,str(r['Categoria'])[:22],bg=bg)
-        dc(ws6,r6,5,str(r['Produto / Serviço'])[:22],bg=bg)
+        dc(ws6,r6,5,str(r['Produto / Servico'])[:22],bg=bg)
         dc(ws6,r6,6,str(r['Parcela']),bg=bg,al="center")
         dc(ws6,r6,7,str(r['FA']) if pd.notna(r['FA']) else '-',bg=bg,al="center")
-        obs=str(r.get('Observações',''))[:45] if pd.notna(r.get('Observações')) else ''
+        obs=str(r.get('Observacoes',''))[:45] if pd.notna(r.get('Observacoes')) else ''
         dc(ws6,r6,8,obs,bg=bg,wrap=True)
         dc(ws6,r6,9,r['VG'],fmt=FB,bg=bg,al="right")
     set_cols(ws6,{'A':12,'B':7,'C':26,'D':18,'E':20,'F':6,'G':6,'H':28,'I':11})
@@ -1041,6 +1044,9 @@ if uploaded:
             continue
     else:
         temp_df = pd.read_csv(io.BytesIO(csv_bytes), sep=';', encoding='latin-1', encoding_errors='replace')
+
+    # Normalize column names (strip accents)
+    temp_df.columns = [_strip_accents(str(c)).strip() for c in temp_df.columns]
 
     # Find unique names across FA columns
     possible_names = set()
@@ -1228,7 +1234,7 @@ else:
     <div class="info-box">
         <strong>Para começar:</strong> faça upload do extrato CSV de comissões extraído do sistema W1.<br><br>
         O arquivo é separado por ponto-e-vírgula (;) e possui colunas como: Data da Movimentação, Contato,
-        Produto / Serviço, Parcela, Nome FA I/II/III/IV, Valor FA I/II/III/IV, etc.<br><br>
+        Produto / Servico, Parcela, Nome FA I/II/III/IV, Valor FA I/II/III/IV, etc.<br><br>
         <strong>O que a planilha gerada inclui:</strong><br>
         • Fluxo mês a mês de cada contrato (Consórcio, MAG, Horizonte, AP, FUP, Holding, Business)<br>
         • Linha de bônus pareada abaixo de cada contrato elegível (M+1 da base)<br>
